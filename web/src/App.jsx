@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useState} from 'react';
-import {LayoutDashboard,Receipt,Boxes,Landmark,Code2,MessageCircle,LogOut,Plus,Copy,RefreshCw,Wallet} from 'lucide-react';
+import {LayoutDashboard,Receipt,Boxes,Landmark,Code2,MessageCircle,LogOut,Plus,Copy,RefreshCw,Wallet,ShieldCheck} from 'lucide-react';
 
 async function api(path,body,method=body?'POST':'GET'){
   const res=await fetch('/api'+path,{method,credentials:'same-origin',headers:{'content-type':'application/json','x-hubcash':'1'},body:body?JSON.stringify(body):undefined});
@@ -177,6 +177,31 @@ function Integration({notify}){
   </>;
 }
 
+const PLAN_NAMES={trial:'Teste',starter:'Starter',pro:'Pro',enterprise:'Enterprise'};
+function AdminPage({notify,me}){
+  const [d,setD]=useState(null),[err,setErr]=useState('');
+  const load=useCallback(()=>api('/admin/workspaces').then(setD).catch(e=>setErr(e.message)),[]);
+  useEffect(()=>{load();},[load]);
+  const save=async(w,changes)=>{try{await api('/admin/workspaces/'+w.id,changes,'PATCH');notify('Empresa atualizada.');load();}catch(x){setErr(x.message);}};
+  return <>
+    <div className="hc-title"><div><h1>Administração UWY</h1><p>Todas as empresas que usam o HubCash. Acesso liberado pela sua conta LINKY.</p></div><button className="hc-btn ghost" onClick={load}><RefreshCw size={15}/> Atualizar</button></div>
+    <Err e={err}/>
+    {d&&<div className="hc-stats">
+      <div className="hc-stat"><span>Empresas</span><b>{d.data.length}</b></div>
+      <div className="hc-stat"><span>Pagantes</span><b>{d.data.filter(w=>w.plan!=='trial'&&!w.suspended).length}</b></div>
+      <div className="hc-stat"><span>Suspensas</span><b>{d.data.filter(w=>w.suspended).length}</b></div>
+      <div className="hc-stat"><span>Movimentado no mês</span><b>{brl(d.data.reduce((t,w)=>t+w.paidThisMonth,0))}</b></div>
+    </div>}
+    <div className="hc-panel">{!d?<p className="hc-muted">Carregando…</p>:<table className="hc-table"><thead><tr><th>Empresa</th><th>Responsável</th><th>Uso</th><th>Plano</th><th/></tr></thead><tbody>{d.data.map(w=><tr key={w.id}>
+      <td>{w.name}<small>desde {date(w.createdAt)}</small></td>
+      <td>{w.owner?.name||'—'}<small>{w.owner?.email}</small></td>
+      <td>{w.apps} apps · {w.charges} cobranças<small>{brl(w.paidThisMonth)} no mês</small></td>
+      <td><select value={w.plan} onChange={e=>save(w,{plan:e.target.value})}>{d.plans.map(p=><option key={p} value={p}>{PLAN_NAMES[p]||p}</option>)}</select></td>
+      <td>{w.id===me.workspace.id?<small>sua empresa</small>:<button className="hc-btn ghost small" onClick={()=>{if(w.suspended||confirm('Suspender '+w.name+'? O painel e as chaves de API dela param de funcionar.'))save(w,{suspended:!w.suspended});}}>{w.suspended?'Reativar':'Suspender'}</button>}{w.suspended&&<small className="hc-bad">suspensa</small>}</td>
+    </tr>)}</tbody></table>}</div>
+  </>;
+}
+
 const PAGES=[['overview','Visão geral',LayoutDashboard],['charges','Cobranças',Receipt],['apps','Apps',Boxes],['accounts','Contas Mercado Pago',Landmark],['integration','Integração',Code2]];
 
 export function App(){
@@ -188,14 +213,16 @@ export function App(){
   if(!me)return <Login onEnter={loadMe}/>;
   if(location.search)history.replaceState(null,'','/');
   return <div className="hc-layout">
-    <aside className="hc-side"><Brand/><nav>{PAGES.map(([k,l,I])=><button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={17}/>{l}</button>)}<button disabled title="Em breve: cobrança automática pelo WhatsApp"><MessageCircle size={17}/>Cobrador WhatsApp<span className="soon">em breve</span></button></nav>
+    <aside className="hc-side"><Brand/><nav>{[...PAGES,...(me.user.role==='admin'?[['admin','Administração',ShieldCheck]]:[])].map(([k,l,I])=><button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={17}/>{l}</button>)}<button disabled title="Em breve: cobrança automática pelo WhatsApp"><MessageCircle size={17}/>Cobrador WhatsApp<span className="soon">em breve</span></button></nav>
       <div className="bottom hc-me"><b>{me.workspace.name}</b><small>{me.user.name||me.user.email}</small><button className="hc-btn ghost small" onClick={async()=>{await fetch('/auth/logout',{method:'POST'});setMe(null);}}><LogOut size={14}/> Sair</button></div></aside>
     <main className="hc-main">
+      {me.workspace.suspended&&<p className="hc-error" style={{marginBottom:18}}>A conta HubCash desta empresa está suspensa. Fale com a UWY para reativar.</p>}
       {page==='overview'&&<><div className="hc-title"><div><h1>Visão geral</h1><p>O caixa da {me.workspace.name}.</p></div></div><Overview/></>}
       {page==='charges'&&<ChargesPage notify={setToast}/>}
       {page==='apps'&&<AppsPage notify={setToast}/>}
       {page==='accounts'&&<AccountsPage notify={setToast}/>}
       {page==='integration'&&<Integration notify={setToast}/>}
+      {page==='admin'&&me.user.role==='admin'&&<AdminPage notify={setToast} me={me}/>}
     </main>
     {toast&&<div className="hc-toast" role="status">{toast}</div>}
   </div>;

@@ -1,14 +1,16 @@
 // "Entrar com LINKY": cliente OpenID Connect (Authorization Code + PKCE S256, state e nonce),
 // no mesmo formato do exemplo oficial do LINKY (examples/node/server.mjs).
+// O HubCash é um app da casa: o LINKY o registra sozinho como cliente público (sem segredo),
+// a partir de LINKY_HUBCASH_CLIENT_ID e LINKY_HUBCASH_URL configurados no próprio LINKY.
 import * as oidc from 'openid-client';
 
 export const LINKY_ISSUER='https://linky-delta1s-projects.vercel.app/api/identity';
 
 export function createLinky({issuer=LINKY_ISSUER,clientId,clientSecret,appUrl}){
-  if(!clientId||!clientSecret)throw new Error('Configure LINKY_CLIENT_ID e LINKY_CLIENT_SECRET (LINKY › Desenvolvedores › Ativar Entrar com LINKY).');
+  if(!clientId)throw new Error('Configure LINKY_CLIENT_ID (o mesmo valor de LINKY_HUBCASH_CLIENT_ID no LINKY).');
   const redirectUri=new URL('/auth/callback',appUrl).href;
   let configPromise;
-  const config=()=>configPromise??=oidc.discovery(new URL(issuer),clientId,{id_token_signed_response_alg:'ES256'},oidc.ClientSecretBasic(clientSecret)).then(c=>{oidc.enableNonRepudiationChecks(c);return c;}).catch(e=>{configPromise=undefined;throw e;});
+  const config=()=>configPromise??=oidc.discovery(new URL(issuer),clientId,{id_token_signed_response_alg:'ES256'},clientSecret?oidc.ClientSecretBasic(clientSecret):oidc.None()).then(c=>{oidc.enableNonRepudiationChecks(c);return c;}).catch(e=>{configPromise=undefined;throw e;});
   return {
     redirectUri,
     // Gera o pedido (guarde verifier/state/nonce no servidor) e a URL para onde mandar o usuário.

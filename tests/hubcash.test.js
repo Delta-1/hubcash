@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {createApp} from '../server/app.js';
 import {createVault} from '../server/crypto.js';
-import {memoryStore} from '../server/store.js';
+import {memoryStore,postgresStore} from '../server/store.js';
 import {HubCash} from '../sdk/hubcash.js';
 
-const env={HUBCASH_MASTER_KEY:'x'.repeat(40),HUBCASH_ADMIN_PASSWORD:'senha-forte',HUBCASH_PUBLIC_URL:'https://hubcash.test'};
+const env={HUBCASH_MASTER_KEY:'x'.repeat(40),HUBCASH_PUBLIC_URL:'https://hubcash.test',HUBCASH_ADMIN_LINKY_IDS:'linky-user-1'};
 const MP_SECRET='segredo-do-webhook-mp';
 
 // Mercado Pago falso: guarda o que foi criado e responde consultas.
@@ -32,7 +32,7 @@ function fakeLinky(){
 }
 
 async function setup(){
-  const mp=fakeMp(),store=memoryStore(),delivered=[],linky=fakeLinky();
+  const mp=fakeMp(),store=process.env.TEST_DATABASE_URL?await postgresStore(process.env.TEST_DATABASE_URL,'hc_test_'+crypto.randomBytes(4).toString('hex')):memoryStore(),delivered=[],linky=fakeLinky();
   const fetchImpl=async(url,opts)=>{delivered.push({url,opts});return {ok:true,status:200};};
   const app=createApp({store,mp,vault:createVault(env.HUBCASH_MASTER_KEY),env,linky,fetchImpl,log:{warn(){},error(){}}});
   const server=await new Promise(r=>{const s=app.listen(0,()=>r(s));});
@@ -140,5 +140,23 @@ test('cada empresa só vê os próprios dados',async()=>{
     // Sair invalida a sessão.
     await t.call('POST','/auth/logout',{},again);
     assert.equal((await t.call('GET','/api/me',null,again)).status,401);
+  }finally{t.close();}
+});
+
+test('conta administradora do LINKY vê todas as empresas e pode suspender',async()=>{
+  const t=await setup();try{
+    const other=await t.login({sub:'linky-user-2',email:'outra@empresa.com',name:'Ana Souza'});
+    assert.equal((await t.call('GET','/api/me',null,other)).body.user.role,'member');
+    assert.equal((await t.call('GET','/api/admin/workspaces',null,other)).status,403);
+    const owner=await t.login({sub:'linky-user-1',email:'dono@uwy.com',name:'Dono UWY'});
+    assert.equal((await t.call('GET','/api/me',null,owner)).body.user.role,'admin');
+    const list=(await t.call('GET','/api/admin/workspaces',null,owner)).body.data;
+    assert.equal(list.length,2);
+    const ana=list.find(w=>w.owner?.email==='outra@empresa.com');
+    assert.equal((await t.call('PATCH','/api/admin/workspaces/'+ana.id,{plan:'pro',suspended:true},owner)).body.suspended,true);
+    assert.equal((await t.call('GET','/api/apps',null,other)).status,403);
+    assert.equal((await t.call('GET','/api/me',null,other)).body.workspace.suspended,true);
+    const mine=list.find(w=>w.owner?.email==='dono@uwy.com');
+    assert.equal((await t.call('PATCH','/api/admin/workspaces/'+mine.id,{suspended:true},owner)).status,400);
   }finally{t.close();}
 });

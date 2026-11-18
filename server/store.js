@@ -30,3 +30,24 @@ export function supabaseStore(url,serviceKey,table='hubcash_records'){
     async health(){const {error}=await db.from(table).select('id').limit(1);return !error;},
   };
 }
+
+// Postgres direto (ex.: banco da Railway em DATABASE_URL). Cria a tabela sozinho.
+export async function postgresStore(connectionString,table='hubcash_records'){
+  const {default:pg}=await import('pg');
+  const local=/@(localhost|127\.0\.0\.1|[\w-]+\.railway\.internal)(:|\/)/.test(connectionString);
+  const pool=new pg.Pool({connectionString,max:5,ssl:local?false:{rejectUnauthorized:false}});
+  await pool.query(`create table if not exists ${table} (kind text not null, id text not null, data jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), primary key (kind,id));
+    create index if not exists ${table}_kind_created on ${table} (kind, created_at desc);
+    create index if not exists ${table}_data on ${table} using gin (data jsonb_path_ops);`);
+  const toObj=r=>r&&{...r.data,id:r.id,createdAt:new Date(r.created_at).toISOString(),updatedAt:new Date(r.updated_at).toISOString()};
+  const split=obj=>{const {id,createdAt,updatedAt,...data}=obj;return {id,createdAt,data};};
+  return {
+    kind:'postgres',
+    async get(kind,id){const {rows}=await pool.query(`select * from ${table} where kind=$1 and id=$2`,[kind,id]);return toObj(rows[0])||null;},
+    async put(kind,obj){const {id,createdAt,data}=split(obj);const {rows}=await pool.query(`insert into ${table} (kind,id,data,created_at) values ($1,$2,$3,coalesce($4::timestamptz,now())) on conflict (kind,id) do update set data=excluded.data, updated_at=now() returning *`,[kind,id,data,createdAt||null]);return toObj(rows[0]);},
+    async insert(kind,obj){const {id,data}=split(obj);const {rowCount}=await pool.query(`insert into ${table} (kind,id,data) values ($1,$2,$3) on conflict do nothing`,[kind,id,data]);return rowCount===1;},
+    async list(kind,{where={},limit=200}={}){const {rows}=await pool.query(`select * from ${table} where kind=$1 and data @> $2::jsonb order by created_at desc limit $3`,[kind,JSON.stringify(where),limit]);return rows.map(toObj);},
+    async findOne(kind,where){return (await this.list(kind,{where,limit:1}))[0]||null;},
+    async health(){try{await pool.query('select 1');return true;}catch{return false;}},
+  };
+}

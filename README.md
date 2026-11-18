@@ -3,6 +3,7 @@
 Central de pagamentos da **UWY**, vendida como produto separado. Cada empresa cliente entra com a **conta LINKY**, ganha o próprio espaço e conecta a própria conta do Mercado Pago. Os apps dessa empresa (como o OLUNE, no caso da UWY) não falam direto com o Mercado Pago: eles pedem ao HubCash "cria uma assinatura de R$ 50 por mês para este cliente", e o HubCash cuida do resto.
 
 - **Login e cadastro pelo LINKY** (OpenID Connect, Authorization Code + PKCE). No primeiro acesso, o HubCash cria o usuário (pelo `sub` do LINKY) e o espaço da empresa.
+- **Conta administradora UWY:** os IDs LINKY em `HUBCASH_ADMIN_LINKY_IDS` veem a aba **Administração**, com todas as empresas, o plano de cada uma e a opção de suspender.
 - **Dados separados por empresa:** contas, apps e cobranças pertencem a um espaço e não aparecem nos outros.
 
 - Guarda as chaves do Mercado Pago **cifradas**, num lugar só.
@@ -32,13 +33,13 @@ npm start              # http://localhost:8080
 
 Para entrar sem o LINKY em desenvolvimento, use `HUBCASH_DEV_LOGIN=true` (botão "Entrar como dev", desligado em produção).
 
-Sem `SUPABASE_URL`, os dados ficam na memória. Para usar o Supabase, rode `supabase/migrations/001_hubcash_records.sql` no SQL Editor do projeto.
+Sem `DATABASE_URL` (ou Supabase), os dados ficam na memória. Para usar o Supabase, rode `supabase/migrations/001_hubcash_records.sql` no SQL Editor do projeto.
 
 Testes: `npm test`. Eles usam um Mercado Pago falso, então não fazem chamadas reais.
 
 ## Primeiro uso
 
-0. **LINKY:** em `/desenvolvedores`, adicione o app **HubCash**, abra **Ativar Entrar com LINKY**, escolha **backend confidencial** e cadastre o callback `https://SEU-HUBCASH/auth/callback`. Copie o `LINKY_CLIENT_ID` e o `LINKY_CLIENT_SECRET` para as variáveis do HubCash.
+0. **LINKY:** o HubCash é um app da casa, então o LINKY o registra sozinho. Na Vercel do LINKY, defina `LINKY_HUBCASH_CLIENT_ID=uwy_hubcash_...` e `LINKY_HUBCASH_URL=https://SEU-HUBCASH`. No HubCash, use o mesmo valor em `LINKY_CLIENT_ID`. Não há segredo nem callback para cadastrar.
 1. **Mercado Pago:** em *Suas integrações*, crie uma aplicação e copie o **access token** (comece pelas credenciais de teste). Em *Webhooks*, configure:
    - URL: a que o painel mostra em *Contas Mercado Pago* (`https://SEU-HUBCASH/webhooks/mercadopago/acc_...`)
    - Eventos: **Pagamentos** e **Planos e assinaturas**
@@ -87,8 +88,9 @@ Eventos: `charge.paid`, `charge.failed`, `charge.refunded`, `charge.updated`, `s
 ## Deploy na Railway
 
 1. Novo serviço apontando para este repositório.
-2. Variáveis: `HUBCASH_MASTER_KEY`, `HUBCASH_PUBLIC_URL`, `LINKY_CLIENT_ID`, `LINKY_CLIENT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
-3. Gere um domínio e use-o em `HUBCASH_PUBLIC_URL` e no webhook do Mercado Pago.
+2. Adicione um banco **PostgreSQL** no projeto (a Railway preenche `DATABASE_URL`; a tabela é criada sozinha).
+3. Variáveis: `HUBCASH_MASTER_KEY`, `HUBCASH_PUBLIC_URL`, `LINKY_CLIENT_ID`, `HUBCASH_ADMIN_LINKY_IDS`, `DATABASE_URL`.
+4. Gere um domínio e use-o em `HUBCASH_PUBLIC_URL`, em `LINKY_HUBCASH_URL` (no LINKY) e no webhook do Mercado Pago.
 
 ## Segurança
 

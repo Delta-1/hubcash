@@ -62,3 +62,5 @@ label small{color:#6f7b76}
 .hc-linky-mark{width:22px;height:22px;border-radius:6px;background:#1b1530;color:#f4f1ff;display:grid;place-items:center;font-size:13px;font-weight:800}
 .hc-fine{font-size:12px;text-align:center}
 .hc-me{display:flex;flex-direction:column;gap:2px}.hc-me small{color:var(--muted);margin-bottom:8px}.hc-me .hc-btn{align-self:flex-start}
+.hc-bad{color:var(--bad)}
+.hc-table select{padding:6px 8px;font-size:13px}
