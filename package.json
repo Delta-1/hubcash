@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.110.1",
-    "express": "4.22.3"
+    "express": "4.22.3",
+    "openid-client": "6.9.0"
   },
   "devDependencies": {
     "lucide-react": "0.468.0",

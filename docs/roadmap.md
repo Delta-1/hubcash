@@ -3,6 +3,10 @@
 ## Fase 1: central de pagamentos (pronta)
 Contas do Mercado Pago, apps com chave de API, pagamento único (Checkout Pro), assinaturas, webhooks, painel e SDK.
 
+## Fase 1.5: produto vendável (pronta em parte)
+- Pronto: login e cadastro pelo LINKY, um espaço por empresa, dados separados.
+- Falta: planos do próprio HubCash (cobrar as empresas que usam o HubCash, usando o próprio HubCash), convidar membros da equipe para o espaço, conferir a conexão no LINKY periodicamente (revogação).
+
 ## Fase 2: Cobrador (clientes e cobranças recorrentes)
 Para empresas que cobram os próprios clientes todo mês ou todo ano.
 - **Empresas cobradoras:** cada empresa que usa o Cobrador tem a sua própria conta do Mercado Pago (o dinheiro cai direto para ela).

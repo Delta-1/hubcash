@@ -1,15 +1,13 @@
 import {useCallback,useEffect,useState} from 'react';
 import {LayoutDashboard,Receipt,Boxes,Landmark,Code2,MessageCircle,LogOut,Plus,Copy,RefreshCw,Wallet} from 'lucide-react';
 
-const TOKEN='hubcash:token';
-const getToken=()=>{try{return sessionStorage.getItem(TOKEN)||'';}catch{return '';}};
-const setToken=t=>{try{t?sessionStorage.setItem(TOKEN,t):sessionStorage.removeItem(TOKEN);}catch{}};
 async function api(path,body,method=body?'POST':'GET'){
-  const res=await fetch('/admin'+path,{method,headers:{'content-type':'application/json',authorization:'Bearer '+getToken()},body:body?JSON.stringify(body):undefined});
+  const res=await fetch('/api'+path,{method,credentials:'same-origin',headers:{'content-type':'application/json','x-hubcash':'1'},body:body?JSON.stringify(body):undefined});
   const data=await res.json().catch(()=>({}));
-  if(res.status===401&&path!=='/login'){setToken('');window.dispatchEvent(new Event('hubcash:logout'));}
+  if(res.status===401)window.dispatchEvent(new Event('hubcash:logout'));
   if(!res.ok)throw new Error(data.error||'Erro '+res.status);return data;
 }
+const LOGIN_ERRORS={expirado:'O pedido de login expirou. Tente de novo.',recusado:'Você não autorizou o HubCash no LINKY.',linky:'Não foi possível concluir o login com o LINKY. Tente de novo.'};
 const brl=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const date=v=>v?new Date(v).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'—';
 const STATUS={pending:'Aguardando',paid:'Pago',failed:'Falhou',refunded:'Estornado',active:'Ativa',paused:'Pausada',canceled:'Cancelada'};
@@ -22,12 +20,17 @@ const Pill=({s})=><span className={'hc-pill '+s}>{STATUS[s]||s}</span>;
 const Err=({e})=>e?<p className="hc-error">{e}</p>:null;
 
 function Login({onEnter}){
-  const [err,setErr]=useState(''),[busy,setBusy]=useState(false);
-  return <div className="hc-login"><form onSubmit={async e=>{e.preventDefault();setBusy(true);setErr('');try{const {token}=await api('/login',fields(e));setToken(token);onEnter();}catch(x){setErr(x.message);}finally{setBusy(false);}}}>
-    <Brand/><p className="hc-muted">Entre com a senha do painel.</p>
-    <label>Senha<input name="password" type="password" autoComplete="current-password" required autoFocus/></label>
-    <Err e={err}/><button className="hc-btn" disabled={busy}>{busy?'Entrando…':'Entrar'}</button>
-  </form></div>;
+  const [cfg,setCfg]=useState(null),err=LOGIN_ERRORS[new URLSearchParams(location.search).get('erro')];
+  useEffect(()=>{fetch('/auth/config').then(r=>r.json()).then(setCfg).catch(()=>setCfg({}));},[]);
+  return <div className="hc-login"><div className="hc-login-card">
+    <Brand/>
+    <div><h1>O caixa da sua empresa, num só lugar.</h1><p className="hc-muted">Cobranças, assinaturas e links de pagamento com o Mercado Pago.</p></div>
+    <Err e={err}/>
+    <a className="hc-btn hc-linky" href="/auth/login"><span className="hc-linky-mark">L</span> Entrar com LINKY</a>
+    <a className="hc-btn ghost" href="/auth/login?signup=1">Criar conta com LINKY</a>
+    {cfg?.devLogin&&<button className="hc-btn ghost small" onClick={async()=>{await fetch('/auth/dev-login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'dev@uwy.local',name:'Dev UWY'})});onEnter();}}>Entrar como dev (só local)</button>}
+    <p className="hc-muted hc-fine">Seu login é a sua conta LINKY, a mesma dos apps da UWY. by UWY</p>
+  </div></div>;
 }
 
 function Overview(){
@@ -177,15 +180,18 @@ function Integration({notify}){
 const PAGES=[['overview','Visão geral',LayoutDashboard],['charges','Cobranças',Receipt],['apps','Apps',Boxes],['accounts','Contas Mercado Pago',Landmark],['integration','Integração',Code2]];
 
 export function App(){
-  const [logged,setLogged]=useState(!!getToken()),[page,setPage]=useState('overview'),[toast,setToast]=useState('');
-  useEffect(()=>{const out=()=>setLogged(false);window.addEventListener('hubcash:logout',out);return()=>window.removeEventListener('hubcash:logout',out);},[]);
+  const [me,setMe]=useState(undefined),[page,setPage]=useState('overview'),[toast,setToast]=useState('');
+  const loadMe=useCallback(()=>api('/me').then(setMe).catch(()=>setMe(null)),[]);
+  useEffect(()=>{loadMe();const out=()=>setMe(null);window.addEventListener('hubcash:logout',out);return()=>window.removeEventListener('hubcash:logout',out);},[loadMe]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3000);return()=>clearTimeout(t);},[toast]);
-  if(!logged)return <Login onEnter={()=>setLogged(true)}/>;
+  if(me===undefined)return <div className="hc-login"><Brand/></div>;
+  if(!me)return <Login onEnter={loadMe}/>;
+  if(location.search)history.replaceState(null,'','/');
   return <div className="hc-layout">
     <aside className="hc-side"><Brand/><nav>{PAGES.map(([k,l,I])=><button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={17}/>{l}</button>)}<button disabled title="Em breve: cobrança automática pelo WhatsApp"><MessageCircle size={17}/>Cobrador WhatsApp<span className="soon">em breve</span></button></nav>
-      <div className="bottom"><button className="hc-btn ghost small" onClick={()=>{setToken('');setLogged(false);}}><LogOut size={14}/> Sair</button></div></aside>
+      <div className="bottom hc-me"><b>{me.workspace.name}</b><small>{me.user.name||me.user.email}</small><button className="hc-btn ghost small" onClick={async()=>{await fetch('/auth/logout',{method:'POST'});setMe(null);}}><LogOut size={14}/> Sair</button></div></aside>
     <main className="hc-main">
-      {page==='overview'&&<><div className="hc-title"><div><h1>Visão geral</h1><p>O caixa da UWY em um só lugar.</p></div></div><Overview/></>}
+      {page==='overview'&&<><div className="hc-title"><div><h1>Visão geral</h1><p>O caixa da {me.workspace.name}.</p></div></div><Overview/></>}
       {page==='charges'&&<ChargesPage notify={setToast}/>}
       {page==='apps'&&<AppsPage notify={setToast}/>}
       {page==='accounts'&&<AccountsPage notify={setToast}/>}

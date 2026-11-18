@@ -20,7 +20,7 @@ export function publicCharge(c){
 
 export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fetch,log=console}){
   const base=String(publicUrl||'').replace(/\/$/,'');
-  const accountToken=async accountId=>{const a=await store.get('account',accountId);if(!a)throw fail(400,'App sem conta do Mercado Pago válida.');return {account:a,token:vault.open(a.accessTokenEnc)};};
+  const accountToken=async(accountId,workspaceId)=>{const a=await store.get('account',accountId);if(!a||(workspaceId&&a.workspaceId!==workspaceId))throw fail(400,'App sem conta do Mercado Pago válida.');return {account:a,token:vault.open(a.accessTokenEnc)};};
 
   // Idempotência: a mesma Idempotency-Key do mesmo app devolve a mesma cobrança.
   async function idempotent(app,key,create){
@@ -35,7 +35,7 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
     const externalReference=text(body.externalReference,'externalReference',120,false)||null,returnUrl=url(body.returnUrl,'returnUrl');
     const maxInstallments=Math.min(12,Math.max(1,Math.floor(Number(body.maxInstallments)||12)));
     return idempotent(app,idemKey,async()=>{
-      const {account,token}=await accountToken(app.accountId),id=randomId('chg');
+      const {account,token}=await accountToken(app.accountId,app.workspaceId),id=randomId('chg');
       const pref=await mp.createPreference(token,{
         items:[{id,title:description,quantity:1,unit_price:amount,currency_id:'BRL'}],
         payer:{email:customer.email,...(customer.name?{name:customer.name}:{})},
@@ -45,7 +45,7 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
         ...(returnUrl?{back_urls:{success:returnUrl,pending:returnUrl,failure:returnUrl},auto_return:'approved'}:{}),
         metadata:{hubcash_charge_id:id,hubcash_app_id:app.id},
       },id);
-      return store.put('charge',{id,kind:'checkout',appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
+      return store.put('charge',{id,kind:'checkout',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
     });
   }
 
@@ -54,12 +54,12 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
     const intervalMonths=Number(body.intervalMonths||1);if(!INTERVALS.includes(intervalMonths))throw fail(400,'intervalMonths deve ser 1, 2, 3, 6 ou 12.');
     const externalReference=text(body.externalReference,'externalReference',120,false)||null,returnUrl=url(body.returnUrl,'returnUrl')||base+'/obrigado';
     return idempotent(app,idemKey,async()=>{
-      const {account,token}=await accountToken(app.accountId),id=randomId('sub');
+      const {account,token}=await accountToken(app.accountId,app.workspaceId),id=randomId('sub');
       const pre=await mp.createPreapproval(token,{
         reason:description,external_reference:id,payer_email:customer.email,back_url:returnUrl,status:'pending',
         auto_recurring:{frequency:intervalMonths,frequency_type:'months',transaction_amount:amount,currency_id:'BRL'},
       },id);
-      return store.put('charge',{id,kind:'subscription',appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,intervalMonths,customer,externalReference,returnUrl,mpId:pre.id,checkoutUrl:pre.init_point,payments:[]});
+      return store.put('charge',{id,kind:'subscription',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,intervalMonths,customer,externalReference,returnUrl,mpId:pre.id,checkoutUrl:pre.init_point,payments:[]});
     });
   }
 
