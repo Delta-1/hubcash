@@ -54,9 +54,10 @@ Autenticação: `Authorization: Bearer hc_live_...` (ou `hc_test_...`). Envie `I
 
 | Método | Rota | O que faz |
 |---|---|---|
-| POST | `/v1/checkouts` | Pagamento único. Body: `amount`, `description`, `customer{email,name}`, `externalReference?`, `returnUrl?`, `maxInstallments?` (1–12) |
+| POST | `/v1/checkouts` | Pagamento único. Body: `amount`, `description`, `customer{email,name}`, `externalReference?`, `returnUrl?`, `maxInstallments?` (1–12), `mode?` (`once` ou `fixed`: link que recebe várias vezes), `expiresInMinutes?` (5 min a 30 dias, só para `once`) |
 | POST | `/v1/subscriptions` | Assinatura. Body: `amount`, `description`, `intervalMonths` (1, 2, 3, 6, 12), `customer{email,name}`, `externalReference?`, `returnUrl?` |
 | POST | `/v1/subscriptions/:id/cancel` | Cancela a assinatura no Mercado Pago |
+| POST | `/v1/charges/:id/deactivate` | Desativa um link de pagamento (fixo ou temporário ainda aberto) |
 | GET | `/v1/charges/:id` | Consulta uma cobrança |
 | GET | `/v1/charges?externalReference=...&status=...` | Lista as cobranças do app |
 

@@ -11,7 +11,7 @@ async function api(path,body,method=body?'POST':'GET'){
 const LOGIN_ERRORS={expirado:'O pedido de login expirou. Tente de novo.',recusado:'Você não autorizou o HubCash no LINKY.',linky:'Não foi possível concluir o login com o LINKY. Tente de novo.'};
 const brl=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const date=v=>v?new Date(v).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'—';
-const STATUS={pending:'Aguardando',paid:'Pago',failed:'Falhou',refunded:'Estornado',active:'Ativa',paused:'Pausada',canceled:'Cancelada'};
+const STATUS={pending:'Aguardando',paid:'Pago',failed:'Falhou',refunded:'Estornado',active:'Ativa',paused:'Pausada',canceled:'Cancelada',expired:'Expirada',inactive:'Desativada'};
 const INTERVAL={1:'mês',2:'2 meses',3:'trimestre',6:'semestre',12:'ano'};
 const fields=e=>Object.fromEntries(new FormData(e.currentTarget));
 const copy=(t,notify)=>navigator.clipboard.writeText(t).then(()=>notify('Copiado.')).catch(()=>notify('Selecione e copie manualmente.'));
@@ -54,10 +54,10 @@ function Charges({rows,apps=[],onCancel}){
   if(!rows?.length)return <p className="hc-empty">Nenhuma cobrança ainda.</p>;
   const name=id=>apps.find(a=>a.id===id)?.name;
   return <table className="hc-table"><thead><tr><th>Cobrança</th><th>Cliente</th><th>Valor</th><th>Status</th><th>Criada</th>{onCancel&&<th/>}</tr></thead><tbody>{rows.map(c=><tr key={c.id}>
-    <td>{c.description}<small>{c.object==='subscription'?'Assinatura':'Pagamento único'}{name(c.appId)?' · '+name(c.appId):''}{c.externalReference?' · '+c.externalReference:''}</small></td>
+    <td>{c.description}<small>{c.object==='subscription'?'Assinatura':c.mode==='fixed'?'Fixa · '+c.paidCount+' pagamento'+(c.paidCount===1?'':'s'):'Pagamento único'}{name(c.appId)?' · '+name(c.appId):''}{c.externalReference?' · '+c.externalReference:''}</small></td>
     <td>{c.customer?.name||c.customer?.email}<small>{c.customer?.name?c.customer.email:''}</small></td>
     <td>{brl(c.amount)}<small>{c.object==='subscription'?'por '+INTERVAL[c.intervalMonths]:''}</small></td>
-    <td><Pill s={c.status}/>{c.checkoutUrl&&c.status==='pending'&&<small><a className="hc-link" href={c.checkoutUrl} target="_blank" rel="noreferrer">link de pagamento</a></small>}</td>
+    <td><Pill s={c.status}/>{c.checkoutUrl&&(c.status==='pending'||(c.mode==='fixed'&&c.status==='active'))&&<small><a className="hc-link" href={c.checkoutUrl} target="_blank" rel="noreferrer">link de pagamento</a></small>}</td>
     <td>{date(c.createdAt)}</td>
     {onCancel&&<td>{c.object==='subscription'&&c.status!=='canceled'&&<button className="hc-btn ghost small" onClick={()=>onCancel(c)}>Cancelar</button>}</td>}
   </tr>)}</tbody></table>;

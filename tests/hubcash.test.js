@@ -14,6 +14,7 @@ function fakeMp(){
   const calls=[],payments=new Map(),preapprovals=new Map();
   return {calls,payments,preapprovals,
     async whoami(t){if(!t.startsWith('APP_USR-'))throw new Error('401');return {id:123,nickname:'UWY'};},
+    async updatePreference(t,id,b){calls.push(['update-preference',id,b]);return {id};},
     async createPreference(t,b){calls.push(['preference',b]);return {id:'pref_1',init_point:'https://mp.test/checkout/pref_1',sandbox_init_point:'https://sandbox.mp.test/pref_1'};},
     async createPreapproval(t,b){calls.push(['preapproval',b]);const p={id:'pre_1',status:'pending',external_reference:b.external_reference,init_point:'https://mp.test/sub/pre_1'};preapprovals.set(p.id,p);return p;},
     async updatePreapproval(t,id,b){calls.push(['update',id,b]);const p=preapprovals.get(id);p.status=b.status;return p;},
@@ -184,4 +185,35 @@ test('em produção, o painel aberto por outro endereço vai para o endereço of
     assert.equal((await fetch(base+'/health')).status,200);
     assert.equal((await fetch(base+'/api/me',{redirect:'manual'})).status,401);
   }finally{server.close();}
+});
+
+test('cobrança fixa recebe várias vezes e pode ser desativada',async()=>{
+  const t=await setup();try{
+    const c=(await t.call('POST','/api/quick-charge',{amount:25,description:'QR do balcão',mode:'fixed'},t.adm)).body;
+    assert.equal(c.mode,'fixed');assert.equal(c.status,'active');assert.equal(c.expiresAt,null);
+    assert.equal(t.mp.calls.at(-1)[1].expires,undefined);
+    for(const [id,rid] of [['501','f1'],['502','f2']]){
+      t.mp.payments.set(id,{id:Number(id),status:'approved',external_reference:c.id,transaction_amount:25,date_approved:new Date().toISOString()});
+      await t.call('POST','/webhooks/mercadopago/'+t.account.id+'?data.id='+id+'&type=payment',{type:'payment',data:{id}},{'x-signature':mpSignature(id,rid),'x-request-id':rid});
+    }
+    await wait();
+    const after=(await t.call('GET','/api/charges/'+c.id,null,t.adm)).body;
+    assert.equal(after.status,'active');assert.equal(after.paidCount,2);assert.equal(after.paidTotal,50);
+    assert.equal((await t.call('GET','/api/overview',null,t.adm)).body.paidThisMonth,50);
+    const off=(await t.call('POST','/api/charges/'+c.id+'/deactivate',{},t.adm)).body;
+    assert.equal(off.status,'inactive');assert.equal(t.mp.calls.at(-1)[0],'update-preference');assert.equal(t.mp.calls.at(-1)[2].expires,true);
+    assert.equal((await t.call('POST','/api/quick-charge',{amount:5,mode:'fixed',expiresInMinutes:30},t.adm)).status,400);
+  }finally{t.close();}
+});
+
+test('cobrança temporária expira no prazo escolhido',async()=>{
+  const t=await setup();try{
+    const c=(await t.call('POST','/api/quick-charge',{amount:80,expiresInMinutes:30},t.adm)).body;
+    const pref=t.mp.calls.at(-1)[1];
+    assert.equal(pref.expires,true);assert.ok(pref.expiration_date_to.endsWith('+00:00'));assert.equal(pref.date_of_expiration,pref.expiration_date_to);
+    const mins=(Date.parse(c.expiresAt)-Date.now())/60e3;assert.ok(mins>29&&mins<31);assert.equal(c.status,'pending');
+    const stored=await t.store.get('charge',c.id);await t.store.put('charge',{...stored,expiresAt:new Date(Date.now()-1000).toISOString()});
+    assert.equal((await t.call('GET','/api/charges/'+c.id,null,t.adm)).body.status,'expired');
+    assert.equal((await t.call('POST','/api/quick-charge',{amount:5,expiresInMinutes:1},t.adm)).status,400);
+  }finally{t.close();}
 });

@@ -16,6 +16,7 @@ export function createMercadoPago({fetchImpl=globalThis.fetch,base=MP_API}={}){
   }
   return {
     createPreference:(token,body,key)=>call(token,'POST','/checkout/preferences',body,key),
+    updatePreference:(token,id,body)=>call(token,'PUT','/checkout/preferences/'+encodeURIComponent(id),body),
     createPreapproval:(token,body,key)=>call(token,'POST','/preapproval',body,key),
     getPreapproval:(token,id)=>call(token,'GET','/preapproval/'+encodeURIComponent(id)),
     updatePreapproval:(token,id,body)=>call(token,'PUT','/preapproval/'+encodeURIComponent(id),body),

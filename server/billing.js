@@ -14,8 +14,11 @@ const text=(v,name,max=200,required=true)=>{const s=String(v??'').trim();if(requ
 const email=v=>{const s=text(v,'customer.email',254).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s))throw fail(400,'customer.email inválido.');return s;};
 const url=(v,name)=>{if(!v)return null;try{const u=new URL(v);if(!['https:','http:'].includes(u.protocol))throw 0;return u.toString();}catch{throw fail(400,name+' precisa ser uma URL http(s).');}};
 
+const mpDate=d=>new Date(d).toISOString().replace('Z','+00:00');
+export const effectiveStatus=c=>c.status==='pending'&&c.expiresAt&&Date.parse(c.expiresAt)<Date.now()?'expired':c.status;
+const paidTotal=c=>Math.round((c.payments||[]).filter(p=>p.status==='paid').reduce((t,p)=>t+Number(p.amount||0),0)*100)/100;
 export function publicCharge(c){
-  return {id:c.id,object:c.kind,source:c.source||'api',status:c.status,amount:c.amount,currency:c.currency,description:c.description,intervalMonths:c.intervalMonths||null,customer:c.customer,externalReference:c.externalReference||null,checkoutUrl:c.checkoutUrl||null,paidAt:c.paidAt||null,lastPaymentAt:c.lastPaymentAt||null,payments:(c.payments||[]).map(p=>({id:p.id,status:p.status,amount:p.amount,at:p.at})),appId:c.appId,createdAt:c.createdAt,updatedAt:c.updatedAt};
+  return {id:c.id,object:c.kind,source:c.source||'api',mode:c.fixed?'fixed':'once',expiresAt:c.expiresAt||null,paidCount:(c.payments||[]).filter(p=>p.status==='paid').length,paidTotal:paidTotal(c),status:effectiveStatus(c),amount:c.amount,currency:c.currency,description:c.description,intervalMonths:c.intervalMonths||null,customer:c.customer,externalReference:c.externalReference||null,checkoutUrl:c.checkoutUrl||null,paidAt:c.paidAt||null,lastPaymentAt:c.lastPaymentAt||null,payments:(c.payments||[]).map(p=>({id:p.id,status:p.status,amount:p.amount,at:p.at})),appId:c.appId,createdAt:c.createdAt,updatedAt:c.updatedAt};
 }
 
 export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fetch,log=console}){
@@ -34,6 +37,10 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
     const amount=money(body.amount),description=text(body.description,'description',120),customer={email:body.customer?.email?email(body.customer.email):null,name:text(body.customer?.name,'customer.name',120,false)||null};
     const externalReference=text(body.externalReference,'externalReference',120,false)||null,returnUrl=url(body.returnUrl,'returnUrl');
     const maxInstallments=Math.min(12,Math.max(1,Math.floor(Number(body.maxInstallments)||12)));
+    const fixed=body.mode==='fixed',minutes=body.expiresInMinutes==null?null:Math.floor(Number(body.expiresInMinutes));
+    if(fixed&&minutes)throw fail(400,'Cobrança fixa não tem prazo: ela fica ativa até você desativar.');
+    if(minutes!=null&&!(minutes>=5&&minutes<=60*24*30))throw fail(400,'expiresInMinutes deve ficar entre 5 minutos e 30 dias.');
+    const expiresAt=minutes?new Date(Date.now()+minutes*60e3).toISOString():null;
     return idempotent(app,idemKey,async()=>{
       const {account,token}=await accountToken(app.accountId,app.workspaceId),id=randomId('chg');
       const pref=await mp.createPreference(token,{
@@ -43,9 +50,10 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
         notification_url:`${base}/webhooks/mercadopago/${account.id}`,
         payment_methods:{installments:maxInstallments},
         ...(returnUrl?{back_urls:{success:returnUrl,pending:returnUrl,failure:returnUrl},auto_return:'approved'}:{}),
+        ...(expiresAt?{expires:true,expiration_date_from:mpDate(Date.now()-60e3),expiration_date_to:mpDate(expiresAt),date_of_expiration:mpDate(expiresAt)}:{}),
         metadata:{hubcash_charge_id:id,hubcash_app_id:app.id},
       },id);
-      return store.put('charge',{id,kind:'checkout',source:body.source||'api',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
+      return store.put('charge',{id,kind:'checkout',fixed,expiresAt,source:body.source||'api',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:fixed?'active':'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
     });
   }
 
@@ -61,6 +69,14 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
       },id);
       return store.put('charge',{id,kind:'subscription',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,intervalMonths,customer,externalReference,returnUrl,mpId:pre.id,checkoutUrl:pre.init_point,payments:[]});
     });
+  }
+
+  async function deactivateCheckout(charge){
+    if(charge.kind!=='checkout')throw fail(400,'Use cancelar para assinaturas.');
+    if(!['active','pending'].includes(effectiveStatus(charge)))return charge;
+    const {token}=await accountToken(charge.accountId,charge.workspaceId);
+    const now=mpDate(Date.now());await mp.updatePreference(token,charge.mpId,{expires:true,expiration_date_from:mpDate(Date.now()-120e3),expiration_date_to:now});
+    const out=await store.put('charge',{...charge,status:'inactive',deactivatedAt:new Date().toISOString()});notifyApp(out,'charge.deactivated');return out;
   }
 
   async function cancelSubscription(app,id){
@@ -91,8 +107,9 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
     if(!c)return null;
     const status=PAYMENT_STATUS[p.status]||'pending',payment={id:String(p.id),status,amount:p.transaction_amount,at:p.date_approved||p.date_created};
     const payments=[...(c.payments||[]).filter(x=>x.id!==payment.id),payment],prev=c.status;
-    const next=c.kind==='subscription'?{...c,payments,lastPaymentAt:status==='paid'?payment.at:c.lastPaymentAt}:{...c,payments,status,paidAt:status==='paid'?payment.at:c.paidAt};
+    const next=c.kind==='subscription'||c.fixed?{...c,payments,lastPaymentAt:status==='paid'?payment.at:c.lastPaymentAt}:{...c,payments,status,paidAt:status==='paid'?payment.at:c.paidAt};
     const saved=await store.put('charge',next);
+    if(c.fixed){if(status==='paid')notifyApp(saved,'charge.payment_received');return saved;}
     notifyApp(saved,c.kind==='subscription'?(status==='paid'?'subscription.payment_succeeded':status==='failed'?'subscription.payment_failed':'subscription.updated'):typeFor(saved,prev));
     return saved;
   }
@@ -119,5 +136,5 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
     }catch(e){log.error?.('[hubcash] webhook',type,dataId,e.message);}}};
   }
 
-  return {createCheckout,createSubscription,cancelSubscription,receiveWebhook,notifyApp,applyPayment,applyPreapproval};
+  return {createCheckout,createSubscription,cancelSubscription,deactivateCheckout,receiveWebhook,notifyApp,applyPayment,applyPreapproval};
 }

@@ -8,7 +8,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {randomId,sha256} from './crypto.js';
-import {createBilling,publicCharge,fail} from './billing.js';
+import {createBilling,publicCharge,effectiveStatus,fail} from './billing.js';
 
 const route=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 const mask=v=>v?'••••'+String(v).slice(-4):null;
@@ -87,6 +87,7 @@ export function createApp({store,mp,vault,env,linky,fetchImpl,log=console}){
   const v1=express.Router();v1.use(appAuth);
   v1.post('/checkouts',route(async(req,res)=>res.status(201).json(publicCharge(await billing.createCheckout(req.hubApp,req.body,req.get('idempotency-key'))))));
   v1.post('/subscriptions',route(async(req,res)=>res.status(201).json(publicCharge(await billing.createSubscription(req.hubApp,req.body,req.get('idempotency-key'))))));
+  v1.post('/charges/:id/deactivate',route(async(req,res)=>{const c=await store.get('charge',req.params.id);if(!c||c.appId!==req.hubApp.id)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(await billing.deactivateCheckout(c)));}));
   v1.post('/subscriptions/:id/cancel',route(async(req,res)=>res.json(publicCharge(await billing.cancelSubscription(req.hubApp,req.params.id)))));
   v1.get('/charges/:id',route(async(req,res)=>{const c=await store.get('charge',req.params.id);if(!c||c.appId!==req.hubApp.id)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(c));}));
   v1.get('/charges',route(async(req,res)=>{const where={appId:req.hubApp.id};if(req.query.externalReference)where.externalReference=String(req.query.externalReference);if(req.query.status)where.status=String(req.query.status);res.json({data:(await store.list('charge',{where,limit:100})).map(publicCharge)});}));
@@ -130,7 +131,7 @@ export function createApp({store,mp,vault,env,linky,fetchImpl,log=console}){
     const where={workspaceId:req.ws.id},charges=await store.list('charge',{where,limit:1000}),month=new Date().toISOString().slice(0,7);
     const paidThisMonth=charges.flatMap(c=>(c.payments||[]).filter(p=>p.status==='paid'&&String(p.at).startsWith(month))).reduce((s,p)=>s+Number(p.amount||0),0);
     const activeSubs=charges.filter(c=>c.kind==='subscription'&&c.status==='active');
-    res.json({paidThisMonth,mrr:activeSubs.reduce((s,c)=>s+c.amount/(c.intervalMonths||1),0),activeSubscriptions:activeSubs.length,pending:charges.filter(c=>c.status==='pending').length,accounts:(await store.list('account',{where})).length,apps:(await store.list('app',{where})).length,recent:charges.slice(0,8).map(publicCharge)});
+    res.json({paidThisMonth,mrr:activeSubs.reduce((s,c)=>s+c.amount/(c.intervalMonths||1),0),activeSubscriptions:activeSubs.length,pending:charges.filter(c=>effectiveStatus(c)==='pending').length,accounts:(await store.list('account',{where})).length,apps:(await store.list('app',{where})).length,recent:charges.slice(0,8).map(publicCharge)});
   }));
 
   api.get('/accounts',route(async(req,res)=>res.json({data:(await store.list('account',{where:{workspaceId:req.ws.id}})).map(publicAccount)})));
@@ -182,9 +183,10 @@ export function createApp({store,mp,vault,env,linky,fetchImpl,log=console}){
     if(!account)throw fail(400,'Conecte uma conta do Mercado Pago antes de cobrar.');
     let app=(await store.list('app',{where:{workspaceId:req.ws.id,internal:true}})).find(a=>a.accountId===account.id);
     if(!app)app=await store.put('app',{id:randomId('app',8),workspaceId:req.ws.id,name:'Maquininha · '+account.name,internal:true,accountId:account.id,webhookUrl:null,keyHash:sha256(randomId('k',32)),keyPrefix:'interno',webhookSecretEnc:null});
-    const c=await billing.createCheckout(app,{amount:req.body?.amount,description:String(req.body?.description||'').trim()||'Cobrança '+req.ws.name,customer:{email:req.body?.customer?.email||undefined,name:req.body?.customer?.name||undefined},maxInstallments:req.body?.maxInstallments||12,source:'maquininha'},req.get('idempotency-key'));
+    const c=await billing.createCheckout(app,{amount:req.body?.amount,description:String(req.body?.description||'').trim()||'Cobrança '+req.ws.name,customer:{email:req.body?.customer?.email||undefined,name:req.body?.customer?.name||undefined},maxInstallments:req.body?.maxInstallments||12,mode:req.body?.mode,expiresInMinutes:req.body?.expiresInMinutes,source:'maquininha'},req.get('idempotency-key'));
     res.status(201).json(publicCharge(c));
   }));
+  api.post('/charges/:id/deactivate',route(async(req,res)=>{const c=await own('charge',req.params.id,req.ws);if(!c)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(await billing.deactivateCheckout(c)));}));
   api.post('/charges/:id/cancel',route(async(req,res)=>{const c=await own('charge',req.params.id,req.ws);if(!c)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(await billing.cancelSubscription(await store.get('app',c.appId),c.id)));}));
   app.use('/api',api);
 
