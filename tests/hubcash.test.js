@@ -160,3 +160,17 @@ test('conta administradora do LINKY vê todas as empresas e pode suspender',asyn
     assert.equal((await t.call('PATCH','/api/admin/workspaces/'+mine.id,{suspended:true},owner)).status,400);
   }finally{t.close();}
 });
+
+test('maquininha cobra na hora sem app e sem e-mail do cliente',async()=>{
+  const t=await setup();try{
+    const out=await t.call('POST','/api/quick-charge',{amount:37.5,description:'Corte de cabelo'},t.adm);
+    assert.equal(out.status,201);assert.equal(out.body.status,'pending');assert.equal(out.body.source,'maquininha');assert.equal(out.body.amount,37.5);
+    const pref=t.mp.calls.at(-1)[1];
+    assert.equal(pref.items[0].unit_price,37.5);assert.equal(pref.payer,undefined);
+    assert.equal((await t.call('GET','/api/charges/'+out.body.id,null,t.adm)).body.id,out.body.id);
+    assert.equal((await t.call('GET','/api/apps',null,t.adm)).body.data.length,1,'app interno não aparece na lista');
+    const other=await t.login({sub:'linky-user-9',email:'x@y.com',name:'Zé'});
+    assert.equal((await t.call('POST','/api/quick-charge',{amount:10},other)).status,400);
+    assert.equal((await t.call('GET','/api/charges/'+out.body.id,null,other)).status,404);
+  }finally{t.close();}
+});

@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useState} from 'react';
-import {LayoutDashboard,Receipt,Boxes,Landmark,Code2,MessageCircle,LogOut,Plus,Copy,RefreshCw,Wallet,ShieldCheck} from 'lucide-react';
+import {Maquininha} from './Maquininha.jsx';
+import {LayoutDashboard,Receipt,Boxes,Landmark,Code2,MessageCircle,LogOut,Plus,Copy,RefreshCw,Wallet,ShieldCheck,Smartphone} from 'lucide-react';
 
 async function api(path,body,method=body?'POST':'GET'){
   const res=await fetch('/api'+path,{method,credentials:'same-origin',headers:{'content-type':'application/json','x-hubcash':'1'},body:body?JSON.stringify(body):undefined});
@@ -202,10 +203,12 @@ function AdminPage({notify,me}){
   </>;
 }
 
-const PAGES=[['overview','Visão geral',LayoutDashboard],['charges','Cobranças',Receipt],['apps','Apps',Boxes],['accounts','Contas Mercado Pago',Landmark],['integration','Integração',Code2]];
+function QuickPage({notify}){const [accounts,setAccounts]=useState(null);useEffect(()=>{api('/accounts').then(d=>setAccounts(d.data)).catch(()=>setAccounts([]));},[]);return <Maquininha api={api} notify={notify} accounts={accounts}/>;}
+
+const PAGES=[['maquininha','Cobrar agora',Smartphone],['overview','Visão geral',LayoutDashboard],['charges','Cobranças',Receipt],['apps','Apps',Boxes],['accounts','Contas Mercado Pago',Landmark],['integration','Integração',Code2]];
 
 export function App(){
-  const [me,setMe]=useState(undefined),[page,setPage]=useState('overview'),[toast,setToast]=useState('');
+  const [me,setMe]=useState(undefined),[page,setPage]=useState('maquininha'),[toast,setToast]=useState('');
   const loadMe=useCallback(()=>api('/me').then(setMe).catch(()=>setMe(null)),[]);
   useEffect(()=>{loadMe();const out=()=>setMe(null);window.addEventListener('hubcash:logout',out);return()=>window.removeEventListener('hubcash:logout',out);},[loadMe]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3000);return()=>clearTimeout(t);},[toast]);
@@ -217,6 +220,7 @@ export function App(){
       <div className="bottom hc-me"><b>{me.workspace.name}</b><small>{me.user.name||me.user.email}</small><button className="hc-btn ghost small" onClick={async()=>{await fetch('/auth/logout',{method:'POST'});setMe(null);}}><LogOut size={14}/> Sair</button></div></aside>
     <main className="hc-main">
       {me.workspace.suspended&&<p className="hc-error" style={{marginBottom:18}}>A conta HubCash desta empresa está suspensa. Fale com a UWY para reativar.</p>}
+      {page==='maquininha'&&<><div className="hc-title"><div><h1>Cobrar agora</h1><p>Digite o valor e mostre o QR Code ou mande o link. Como uma maquininha.</p></div></div><QuickPage notify={setToast}/></>}
       {page==='overview'&&<><div className="hc-title"><div><h1>Visão geral</h1><p>O caixa da {me.workspace.name}.</p></div></div><Overview/></>}
       {page==='charges'&&<ChargesPage notify={setToast}/>}
       {page==='apps'&&<AppsPage notify={setToast}/>}

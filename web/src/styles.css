@@ -65,3 +65,35 @@ label small{color:#6f7b76}
 .hc-bad{color:var(--bad)}
 .hc-table select{padding:6px 8px;font-size:13px}
 .hc-ok-text{color:var(--accent)}
+
+/* Maquininha */
+.mq-wrap{display:flex;justify-content:center}
+.mq-card,.mq-result{width:100%;max-width:440px;display:flex;flex-direction:column;gap:14px}
+.mq-label{text-align:center;font-size:13px;margin:0}
+.mq-amount{display:block;text-align:center;font-size:44px;font-weight:650;letter-spacing:-1.5px;font-variant-numeric:tabular-nums;line-height:1.1}
+.mq-amount.empty{color:var(--muted)}
+.mq-presets{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.mq-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mq-key{height:56px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:22px;font-weight:600;cursor:pointer;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.mq-key:hover{border-color:var(--accent)}
+.mq-key:active{transform:scale(.97)}
+.mq-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mq-go{min-height:52px;font-size:16px}
+.mq-qr{width:100%;max-width:300px;align-self:center;border-radius:12px;background:#fff;padding:10px}
+.mq-hint{text-align:center;font-size:13px;margin:0}
+.mq-status{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--warn);font-weight:600;margin:0}
+.mq-dot{width:9px;height:9px;border-radius:50%;background:var(--warn);animation:mqpulse 1.4s ease-in-out infinite}
+@keyframes mqpulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.mq-dot{animation:none}}
+.mq-link{font-size:11.5px}
+.mq-actions{justify-content:center}
+.mq-actions a{text-decoration:none}
+.mq-new{align-self:center}
+.mq-paid{display:flex;flex-direction:column;align-items:center;gap:8px;padding:24px 0;text-align:center}
+.mq-paid span{width:76px;height:76px;border-radius:50%;background:#5fe3a11c;color:var(--accent);display:grid;place-items:center}
+.mq-paid h2{font-size:28px;margin:0}
+@media(max-width:480px){.mq-two{grid-template-columns:1fr}.mq-amount{font-size:38px}}
+label input,label select{width:100%;min-width:0}
+.mq-two label,.mq-card label{min-width:0}
+.hc-main,.hc-side{min-width:0}
+@media(max-width:860px){.hc-layout{grid-template-columns:minmax(0,1fr)}.hc-side nav{min-width:0}.hc-side nav button{flex:none}}

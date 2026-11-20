@@ -15,7 +15,7 @@ const email=v=>{const s=text(v,'customer.email',254).toLowerCase();if(!/^[^\s@]+
 const url=(v,name)=>{if(!v)return null;try{const u=new URL(v);if(!['https:','http:'].includes(u.protocol))throw 0;return u.toString();}catch{throw fail(400,name+' precisa ser uma URL http(s).');}};
 
 export function publicCharge(c){
-  return {id:c.id,object:c.kind,status:c.status,amount:c.amount,currency:c.currency,description:c.description,intervalMonths:c.intervalMonths||null,customer:c.customer,externalReference:c.externalReference||null,checkoutUrl:c.checkoutUrl||null,paidAt:c.paidAt||null,lastPaymentAt:c.lastPaymentAt||null,payments:(c.payments||[]).map(p=>({id:p.id,status:p.status,amount:p.amount,at:p.at})),appId:c.appId,createdAt:c.createdAt,updatedAt:c.updatedAt};
+  return {id:c.id,object:c.kind,source:c.source||'api',status:c.status,amount:c.amount,currency:c.currency,description:c.description,intervalMonths:c.intervalMonths||null,customer:c.customer,externalReference:c.externalReference||null,checkoutUrl:c.checkoutUrl||null,paidAt:c.paidAt||null,lastPaymentAt:c.lastPaymentAt||null,payments:(c.payments||[]).map(p=>({id:p.id,status:p.status,amount:p.amount,at:p.at})),appId:c.appId,createdAt:c.createdAt,updatedAt:c.updatedAt};
 }
 
 export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fetch,log=console}){
@@ -31,21 +31,21 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
   }
 
   async function createCheckout(app,body,idemKey){
-    const amount=money(body.amount),description=text(body.description,'description',120),customer={email:email(body.customer?.email),name:text(body.customer?.name,'customer.name',120,false)||null};
+    const amount=money(body.amount),description=text(body.description,'description',120),customer={email:body.customer?.email?email(body.customer.email):null,name:text(body.customer?.name,'customer.name',120,false)||null};
     const externalReference=text(body.externalReference,'externalReference',120,false)||null,returnUrl=url(body.returnUrl,'returnUrl');
     const maxInstallments=Math.min(12,Math.max(1,Math.floor(Number(body.maxInstallments)||12)));
     return idempotent(app,idemKey,async()=>{
       const {account,token}=await accountToken(app.accountId,app.workspaceId),id=randomId('chg');
       const pref=await mp.createPreference(token,{
         items:[{id,title:description,quantity:1,unit_price:amount,currency_id:'BRL'}],
-        payer:{email:customer.email,...(customer.name?{name:customer.name}:{})},
+        ...(customer.email||customer.name?{payer:{...(customer.email?{email:customer.email}:{}),...(customer.name?{name:customer.name}:{})}}:{}),
         external_reference:id,
         notification_url:`${base}/webhooks/mercadopago/${account.id}`,
         payment_methods:{installments:maxInstallments},
         ...(returnUrl?{back_urls:{success:returnUrl,pending:returnUrl,failure:returnUrl},auto_return:'approved'}:{}),
         metadata:{hubcash_charge_id:id,hubcash_app_id:app.id},
       },id);
-      return store.put('charge',{id,kind:'checkout',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
+      return store.put('charge',{id,kind:'checkout',source:body.source||'api',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
     });
   }
 

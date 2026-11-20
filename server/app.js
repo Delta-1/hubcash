@@ -146,7 +146,7 @@ export function createApp({store,mp,vault,env,linky,fetchImpl,log=console}){
   }));
 
   const newKey=mode=>'hc_'+(mode==='live'?'live':'test')+'_'+randomId('k',24).slice(2);
-  api.get('/apps',route(async(req,res)=>res.json({data:(await store.list('app',{where:{workspaceId:req.ws.id}})).map(publicApp)})));
+  api.get('/apps',route(async(req,res)=>res.json({data:(await store.list('app',{where:{workspaceId:req.ws.id}})).filter(a=>!a.internal).map(publicApp)})));
   api.post('/apps',route(async(req,res)=>{
     const name=String(req.body?.name||'').trim(),account=await own('account',req.body?.accountId,req.ws);
     if(!name)throw fail(400,'Dê um nome para o app.');if(!account)throw fail(400,'Escolha a conta do Mercado Pago que vai receber.');
@@ -169,6 +169,17 @@ export function createApp({store,mp,vault,env,linky,fetchImpl,log=console}){
   api.post('/charges',route(async(req,res)=>{
     const a=await own('app',req.body?.appId,req.ws);if(!a)throw fail(400,'Escolha o app da cobrança.');
     const c=req.body?.kind==='subscription'?await billing.createSubscription(a,req.body):await billing.createCheckout(a,req.body);res.status(201).json(publicCharge(c));
+  }));
+  api.get('/charges/:id',route(async(req,res)=>{const c=await own('charge',req.params.id,req.ws);if(!c)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(c));}));
+  // Maquininha: cobrança avulsa na hora, sem precisar de app. Usa um app interno do espaço.
+  api.post('/quick-charge',route(async(req,res)=>{
+    const accounts=await store.list('account',{where:{workspaceId:req.ws.id}});
+    const account=req.body?.accountId?accounts.find(a=>a.id===req.body.accountId):accounts.find(a=>a.mode==='live')||accounts[0];
+    if(!account)throw fail(400,'Conecte uma conta do Mercado Pago antes de cobrar.');
+    let app=(await store.list('app',{where:{workspaceId:req.ws.id,internal:true}})).find(a=>a.accountId===account.id);
+    if(!app)app=await store.put('app',{id:randomId('app',8),workspaceId:req.ws.id,name:'Maquininha · '+account.name,internal:true,accountId:account.id,webhookUrl:null,keyHash:sha256(randomId('k',32)),keyPrefix:'interno',webhookSecretEnc:null});
+    const c=await billing.createCheckout(app,{amount:req.body?.amount,description:String(req.body?.description||'').trim()||'Cobrança '+req.ws.name,customer:{email:req.body?.customer?.email||undefined,name:req.body?.customer?.name||undefined},maxInstallments:req.body?.maxInstallments||12,source:'maquininha'},req.get('idempotency-key'));
+    res.status(201).json(publicCharge(c));
   }));
   api.post('/charges/:id/cancel',route(async(req,res)=>{const c=await own('charge',req.params.id,req.ws);if(!c)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(await billing.cancelSubscription(await store.get('app',c.appId),c.id)));}));
   app.use('/api',api);
