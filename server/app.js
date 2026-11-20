@@ -28,6 +28,10 @@ export function createApp({store,mp,vault,env,linky,fetchImpl,log=console}){
   const setCookie=(res,name,value,maxAgeMs)=>res.append('Set-Cookie',`${name}=${value?encodeURIComponent(value):''}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(maxAgeMs/1000)}${secure?'; Secure':''}`);
   app.disable('x-powered-by');app.set('trust proxy',1);
   app.use((req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');next();});
+  // Endereço oficial: quem abre o painel por outro endereço (ex.: o da Railway) vai para HUBCASH_PUBLIC_URL.
+  // API, webhooks e health continuam respondendo em qualquer endereço.
+  const canonicalHost=publicUrl&&env.NODE_ENV==='production'?new URL(publicUrl).host:null;
+  app.use((req,res,next)=>{if(!canonicalHost||req.method!=='GET'||req.get('host')===canonicalHost||/^\/(v1|api|webhooks|health)(\/|$)/.test(req.path))return next();res.redirect(301,publicUrl+req.originalUrl);});
   app.use(express.json({limit:'256kb'}));
 
   app.get('/health',route(async(req,res)=>res.json({ok:await store.health(),store:store.kind})));

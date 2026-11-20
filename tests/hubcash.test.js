@@ -174,3 +174,14 @@ test('maquininha cobra na hora sem app e sem e-mail do cliente',async()=>{
     assert.equal((await t.call('GET','/api/charges/'+out.body.id,null,other)).status,404);
   }finally{t.close();}
 });
+
+test('em produção, o painel aberto por outro endereço vai para o endereço oficial',async()=>{
+  const app=createApp({store:memoryStore(),mp:fakeMp(),vault:createVault(env.HUBCASH_MASTER_KEY),env:{...env,NODE_ENV:'production'},linky:fakeLinky(),log:{warn(){},error(){}}});
+  const server=await new Promise(r=>{const s=app.listen(0,()=>r(s));});const base='http://127.0.0.1:'+server.address().port;
+  try{
+    const res=await fetch(base+'/auth/login?x=1',{redirect:'manual'});
+    assert.equal(res.status,301);assert.equal(res.headers.get('location'),'https://hubcash.test/auth/login?x=1');
+    assert.equal((await fetch(base+'/health')).status,200);
+    assert.equal((await fetch(base+'/api/me',{redirect:'manual'})).status,401);
+  }finally{server.close();}
+});
