@@ -7,7 +7,11 @@ Contas do Mercado Pago, apps com chave de API, pagamento único (Checkout Pro), 
 - Pronto: login e cadastro pelo LINKY, um espaço por empresa, dados separados.
 - Falta: planos do próprio HubCash (cobrar as empresas que usam o HubCash, usando o próprio HubCash), convidar membros da equipe para o espaço, conferir a conexão no LINKY periodicamente (revogação).
 
-## Fase 2: Cobrador (clientes e cobranças recorrentes)
+## Fase 2: Cobrador (pronta, sem WhatsApp)
+- Pronto: clientes, cobranças recorrentes (semanal, mensal, trimestral, semestral, anual), duração sem fim / por N vezes / até uma data, geração automática com antecedência, situação em dia / em aberto / atrasado, link e mensagem pronta para WhatsApp.
+- Falta: importar clientes por planilha; envio automático pelo MOW (fase 3).
+
+### Plano original
 Para empresas que cobram os próprios clientes todo mês ou todo ano.
 - **Empresas cobradoras:** cada empresa que usa o Cobrador tem a sua própria conta do Mercado Pago (o dinheiro cai direto para ela).
 - **Clientes:** cadastro (nome, telefone, e-mail, documento) e importação por planilha.

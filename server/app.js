@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {randomId,sha256} from './crypto.js';
 import {createBilling,publicCharge,effectiveStatus,fail} from './billing.js';
+import {createCollector} from './collector.js';
 
 const route=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next);
 const mask=v=>v?'••••'+String(v).slice(-4):null;
@@ -188,6 +189,7 @@ export function createApp({store,mp,vault,env,linky,fetchImpl,log=console}){
   }));
   api.post('/charges/:id/deactivate',route(async(req,res)=>{const c=await own('charge',req.params.id,req.ws);if(!c)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(await billing.deactivateCheckout(c)));}));
   api.post('/charges/:id/cancel',route(async(req,res)=>{const c=await own('charge',req.params.id,req.ws);if(!c)throw fail(404,'Cobrança não encontrada.');res.json(publicCharge(await billing.cancelSubscription(await store.get('app',c.appId),c.id)));}));
+  const collector=createCollector({store,billing,log});collector.install(api,route);app.collector=collector;
   app.use('/api',api);
 
   // ---------- Painel web (build do Vite) ----------

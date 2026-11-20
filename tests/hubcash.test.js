@@ -51,7 +51,7 @@ async function setup(){
   const adm=await login();
   const {body:account}=await call('POST','/api/accounts',{name:'UWY',mode:'test',accessToken:'APP_USR-'+'1'.repeat(30),webhookSecret:MP_SECRET},adm);
   const {body:created}=await call('POST','/api/apps',{name:'OLUNE',accountId:account.id,webhookUrl:'https://olune.test/hooks/hubcash'},adm);
-  return {mp,store,delivered,server,base,call,login,adm,account,created,close:()=>server.close()};
+  return {mp,store,app,delivered,server,base,call,login,adm,account,created,close:()=>server.close()};
 }
 
 const mpSignature=(dataId,requestId,ts=String(Date.now()))=>`ts=${ts},v1=${crypto.createHmac('sha256',MP_SECRET).update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex')}`;
@@ -215,5 +215,54 @@ test('cobrança temporária expira no prazo escolhido',async()=>{
     const stored=await t.store.get('charge',c.id);await t.store.put('charge',{...stored,expiresAt:new Date(Date.now()-1000).toISOString()});
     assert.equal((await t.call('GET','/api/charges/'+c.id,null,t.adm)).body.status,'expired');
     assert.equal((await t.call('POST','/api/quick-charge',{amount:5,expiresInMinutes:1},t.adm)).status,400);
+  }finally{t.close();}
+});
+
+test('cobrador: cliente, recorrência mensal limitada, geração automática e atraso',async()=>{
+  const t=await setup();try{
+    const bad=await t.call('POST','/api/collector/customers',{name:'Ana',phone:'123'},t.adm);assert.equal(bad.status,400);
+    const cus=(await t.call('POST','/api/collector/customers',{name:'Padaria Sol',phone:'(68) 99999-0000',email:'Padaria@Sol.com',document:'11.222.333/0001-81'},t.adm)).body;
+    assert.equal(cus.phone,'5568999990000');assert.equal(cus.email,'padaria@sol.com');assert.equal(cus.situation,'ok');
+    const today=new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+    // 3 mensalidades de R$ 150 a partir de hoje, vencendo hoje: a primeira sai na hora.
+    const rec=(await t.call('POST','/api/collector/recurrings',{customerId:cus.id,description:'Mensalidade',amount:'150,00',frequency:'monthly',dayOfMonth:28,startDate:today,limit:'count',occurrences:3,leadDays:31},t.adm)).body;
+    assert.equal(rec.status,'active');assert.equal(rec.generated,1);
+    let detail=(await t.call('GET','/api/collector/customers/'+cus.id,null,t.adm)).body;
+    assert.equal(detail.charges.length,1);assert.equal(detail.charges[0].amount,150);assert.ok(detail.charges[0].dueDate);
+    assert.equal(t.mp.calls.at(-1)[1].external_reference,detail.charges[0].id);
+    // varredura: com 31 dias de antecedência, gera a próxima; não duplica na segunda passada
+    // gerar manualmente até acabar
+    await t.call('POST','/api/collector/recurrings/'+rec.id+'/generate',{},t.adm);
+    await t.call('POST','/api/collector/recurrings/'+rec.id+'/generate',{},t.adm);
+    detail=(await t.call('GET','/api/collector/customers/'+cus.id,null,t.adm)).body;
+    assert.equal(detail.charges.length,3);assert.equal(detail.recurrings[0].status,'finished');
+    assert.equal((await t.call('POST','/api/collector/recurrings/'+rec.id+'/generate',{},t.adm)).status,400);
+    // vencida e não paga vira atrasada
+    const first=detail.charges.at(-1),stored=await t.store.get('charge',first.id);
+    await t.store.put('charge',{...stored,dueDate:'2020-01-10'});
+    detail=(await t.call('GET','/api/collector/customers/'+cus.id,null,t.adm)).body;
+    assert.equal(detail.situation,'overdue');assert.equal(detail.charges.find(c=>c.id===first.id).status,'overdue');
+    const sum=(await t.call('GET','/api/collector/summary',null,t.adm)).body;
+    assert.equal(sum.customers,1);assert.equal(sum.overdueCount,1);
+    // outra empresa não vê
+    const other=await t.login({sub:'linky-user-7',email:'o@o.com',name:'Outro'});
+    assert.equal((await t.call('GET','/api/collector/customers/'+cus.id,null,other)).status,404);
+  }finally{t.close();}
+});
+
+test('cobrador: varredura gera só o que entra na antecedência e não duplica',async()=>{
+  const t=await setup();try{
+    const cus=(await t.call('POST','/api/collector/customers',{name:'Cliente X'},t.adm)).body;
+    const today=new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+    const rec=(await t.call('POST','/api/collector/recurrings',{customerId:cus.id,description:'Plano',amount:50,frequency:'weekly',startDate:today,leadDays:0},t.adm)).body;
+    assert.equal(rec.generated,1);
+    const before=t.mp.calls.length;
+    assert.equal(await t.app.collector.sweep(),0);assert.equal(await t.app.collector.sweep(),0);
+    assert.equal(t.mp.calls.length,before);
+    const r=await t.store.get('recurring',rec.id);await t.store.put('recurring',{...r,nextDueDate:today});
+    assert.equal(await t.app.collector.sweep(),1);assert.equal(await t.app.collector.sweep(),0);
+    await t.call('PATCH','/api/collector/recurrings/'+rec.id,{action:'pause'},t.adm);
+    const r2=await t.store.get('recurring',rec.id);await t.store.put('recurring',{...r2,nextDueDate:today});
+    assert.equal(await t.app.collector.sweep(),0);
   }finally{t.close();}
 });

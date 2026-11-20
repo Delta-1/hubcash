@@ -13,4 +13,7 @@ if(env.LINKY_CLIENT_ID)linky=createLinky({issuer:env.LINKY_ISSUER||LINKY_ISSUER,
 else console.warn('[hubcash] Entrar com LINKY desligado: configure LINKY_CLIENT_ID.');
 const app=createApp({store,mp:createMercadoPago(),vault:createVault(env.HUBCASH_MASTER_KEY),env,linky});
 const port=Number(env.PORT||8080);
+// Cobrador: gera os vencimentos que entram na janela de antecedência.
+const sweep=()=>app.collector.sweep().then(n=>n&&console.log(`[cobrador] ${n} cobrança(s) gerada(s)`)).catch(e=>console.error('[cobrador]',e.message));
+setTimeout(sweep,30e3);setInterval(sweep,15*60e3);
 app.listen(port,()=>console.log(`[hubcash] no ar na porta ${port} (${store.kind}). Callback do LINKY: ${new URL('/auth/callback',env.HUBCASH_PUBLIC_URL).href}`));

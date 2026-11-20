@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useState} from 'react';
 import {Maquininha} from './Maquininha.jsx';
-import {LayoutDashboard,Receipt,Boxes,Landmark,Code2,MessageCircle,LogOut,Plus,Copy,RefreshCw,Wallet,ShieldCheck,Smartphone} from 'lucide-react';
+import {Cobrador} from './Cobrador.jsx';
+import {LayoutDashboard,Receipt,Boxes,Landmark,Code2,MessageCircle,LogOut,Plus,Copy,RefreshCw,Wallet,ShieldCheck,Smartphone,Repeat} from 'lucide-react';
 
 async function api(path,body,method=body?'POST':'GET'){
   const res=await fetch('/api'+path,{method,credentials:'same-origin',headers:{'content-type':'application/json','x-hubcash':'1'},body:body?JSON.stringify(body):undefined});
@@ -205,7 +206,7 @@ function AdminPage({notify,me}){
 
 function QuickPage({notify}){const [accounts,setAccounts]=useState(null);useEffect(()=>{api('/accounts').then(d=>setAccounts(d.data)).catch(()=>setAccounts([]));},[]);return <Maquininha api={api} notify={notify} accounts={accounts}/>;}
 
-const PAGES=[['maquininha','Cobrar agora',Smartphone],['overview','Visão geral',LayoutDashboard],['charges','Cobranças',Receipt],['apps','Apps',Boxes],['accounts','Contas Mercado Pago',Landmark],['integration','Integração',Code2]];
+const PAGES=[['maquininha','Cobrar agora',Smartphone],['cobrador','Cobrador',Repeat],['overview','Visão geral',LayoutDashboard],['charges','Cobranças',Receipt],['apps','Apps',Boxes],['accounts','Contas Mercado Pago',Landmark],['integration','Integração',Code2]];
 
 export function App(){
   const [me,setMe]=useState(undefined),[page,setPage]=useState('maquininha'),[toast,setToast]=useState('');
@@ -216,11 +217,12 @@ export function App(){
   if(!me)return <Login onEnter={loadMe}/>;
   if(location.search)history.replaceState(null,'','/');
   return <div className="hc-layout">
-    <aside className="hc-side"><Brand/><nav>{[...PAGES,...(me.user.role==='admin'?[['admin','Administração',ShieldCheck]]:[])].map(([k,l,I])=><button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={17}/>{l}</button>)}<button disabled title="Em breve: cobrança automática pelo WhatsApp"><MessageCircle size={17}/>Cobrador WhatsApp<span className="soon">em breve</span></button></nav>
+    <aside className="hc-side"><Brand/><nav>{[...PAGES,...(me.user.role==='admin'?[['admin','Administração',ShieldCheck]]:[])].map(([k,l,I])=><button key={k} className={page===k?'active':''} onClick={()=>setPage(k)}><I size={17}/>{l}</button>)}</nav>
       <div className="bottom hc-me"><b>{me.workspace.name}</b><small>{me.user.name||me.user.email}</small><button className="hc-btn ghost small" onClick={async()=>{await fetch('/auth/logout',{method:'POST'});setMe(null);}}><LogOut size={14}/> Sair</button></div></aside>
     <main className="hc-main">
       {me.workspace.suspended&&<p className="hc-error" style={{marginBottom:18}}>A conta HubCash desta empresa está suspensa. Fale com a UWY para reativar.</p>}
       {page==='maquininha'&&<><div className="hc-title"><div><h1>Cobrar agora</h1><p>Digite o valor e mostre o QR Code ou mande o link. Como uma maquininha.</p></div></div><QuickPage notify={setToast}/></>}
+      {page==='cobrador'&&<Cobrador api={api} notify={setToast}/>}
       {page==='overview'&&<><div className="hc-title"><div><h1>Visão geral</h1><p>O caixa da {me.workspace.name}.</p></div></div><Overview/></>}
       {page==='charges'&&<ChargesPage notify={setToast}/>}
       {page==='apps'&&<AppsPage notify={setToast}/>}

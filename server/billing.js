@@ -15,10 +15,11 @@ const email=v=>{const s=text(v,'customer.email',254).toLowerCase();if(!/^[^\s@]+
 const url=(v,name)=>{if(!v)return null;try{const u=new URL(v);if(!['https:','http:'].includes(u.protocol))throw 0;return u.toString();}catch{throw fail(400,name+' precisa ser uma URL http(s).');}};
 
 const mpDate=d=>new Date(d).toISOString().replace('Z','+00:00');
-export const effectiveStatus=c=>c.status==='pending'&&c.expiresAt&&Date.parse(c.expiresAt)<Date.now()?'expired':c.status;
+const todayBRT=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+export const effectiveStatus=c=>c.status!=='pending'?c.status:c.expiresAt&&Date.parse(c.expiresAt)<Date.now()?'expired':c.dueDate&&c.dueDate<todayBRT()?'overdue':c.status;
 const paidTotal=c=>Math.round((c.payments||[]).filter(p=>p.status==='paid').reduce((t,p)=>t+Number(p.amount||0),0)*100)/100;
 export function publicCharge(c){
-  return {id:c.id,object:c.kind,source:c.source||'api',mode:c.fixed?'fixed':'once',expiresAt:c.expiresAt||null,paidCount:(c.payments||[]).filter(p=>p.status==='paid').length,paidTotal:paidTotal(c),status:effectiveStatus(c),amount:c.amount,currency:c.currency,description:c.description,intervalMonths:c.intervalMonths||null,customer:c.customer,externalReference:c.externalReference||null,checkoutUrl:c.checkoutUrl||null,paidAt:c.paidAt||null,lastPaymentAt:c.lastPaymentAt||null,payments:(c.payments||[]).map(p=>({id:p.id,status:p.status,amount:p.amount,at:p.at})),appId:c.appId,createdAt:c.createdAt,updatedAt:c.updatedAt};
+  return {id:c.id,object:c.kind,source:c.source||'api',mode:c.fixed?'fixed':'once',dueDate:c.dueDate||null,customerId:c.customerId||null,recurringId:c.recurringId||null,expiresAt:c.expiresAt||null,paidCount:(c.payments||[]).filter(p=>p.status==='paid').length,paidTotal:paidTotal(c),status:effectiveStatus(c),amount:c.amount,currency:c.currency,description:c.description,intervalMonths:c.intervalMonths||null,customer:c.customer,externalReference:c.externalReference||null,checkoutUrl:c.checkoutUrl||null,paidAt:c.paidAt||null,lastPaymentAt:c.lastPaymentAt||null,payments:(c.payments||[]).map(p=>({id:p.id,status:p.status,amount:p.amount,at:p.at})),appId:c.appId,createdAt:c.createdAt,updatedAt:c.updatedAt};
 }
 
 export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fetch,log=console}){
@@ -53,7 +54,8 @@ export function createBilling({store,mp,vault,publicUrl,fetchImpl=globalThis.fet
         ...(expiresAt?{expires:true,expiration_date_from:mpDate(Date.now()-60e3),expiration_date_to:mpDate(expiresAt),date_of_expiration:mpDate(expiresAt)}:{}),
         metadata:{hubcash_charge_id:id,hubcash_app_id:app.id},
       },id);
-      return store.put('charge',{id,kind:'checkout',fixed,expiresAt,source:body.source||'api',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:fixed?'active':'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
+      const extra=body.extra&&typeof body.extra==='object'?{customerId:body.extra.customerId||null,recurringId:body.extra.recurringId||null,dueDate:body.extra.dueDate||null}:{};
+      return store.put('charge',{id,kind:'checkout',fixed,expiresAt,...extra,source:body.source||'api',workspaceId:app.workspaceId,appId:app.id,accountId:account.id,status:fixed?'active':'pending',amount,currency:'BRL',description,customer,externalReference,returnUrl,mpId:pref.id,checkoutUrl:account.mode==='test'?(pref.sandbox_init_point||pref.init_point):pref.init_point,payments:[]});
     });
   }
 
